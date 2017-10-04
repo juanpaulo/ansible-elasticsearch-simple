@@ -1,0 +1,59 @@
+---
+- hosts: "{{node_type}}_nodes"
+  vars:
+    releasever: 5.5.2
+  tasks:
+    - name: Install & Configure Java and Elasticsearch
+      block:
+        - name: Install Oracle Java 8 JDK
+          shell: |
+            cd /root
+            wget --no-cookies --no-check-certificate --header "Cookie: gpw_e24=http%3A%2F%2Fwww.oracle.com%2F; oraclelicense=accept-securebackup-cookie" "https://edelivery.oracle.com/otn-pub/java/jdk/8u144-b01/090f390dda5b47b9b721c7dfaa008135/jdk-8u144-linux-x64.rpm"
+            yum localinstall /root/jdk-8u144-linux-x64.rpm -y
+        - name: Download Elasticsearch RPM
+          get_url:
+            url: https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{releasever}}.rpm
+            dest: /root/elasticsearch-{{releasever}}.rpm
+        - name: Install Elasticsearch RPM
+          yum:
+            name: /root/elasticsearch-{{releasever}}.rpm
+            state: present
+        - name: Create log path
+          file:
+            path: /data_hdd/log/elasticsearch
+            state: directory
+            owner: elasticsearch
+            group: elasticsearch
+        - name: Set JVM heap size
+          copy:
+            src: "{{node_type}}_nodes/jvm.options"
+            dest: /etc/elasticsearch/
+        - name: Disable swapping
+          copy:
+            src: "{{node_type}}_nodes/elasticsearch.yml"
+            dest: /etc/elasticsearch/
+        - name: Override systemd configuration
+          copy:
+            src: "common/elasticsearch.conf"
+            dest: /etc/systemd/system/elasticsearch.service.d/
+        - name: Ensure sufficient virtual memory
+          sysctl:
+            name: vm.max_map_count
+            value: 262144
+            sysctl_set: yes
+            state: present
+            reload: yes
+        - name: Run Elasticsearch with systemd
+          systemd:
+            name: elasticsearch.service
+            daemon_reload: yes
+            enabled: yes
+            state: restarted
+        - name: Delete installation files
+          file:
+            path: "{{item}}"
+            state: absent
+          with_items:
+            - /root/jdk-8u144-linux-x64.rpm
+      become: true
+
